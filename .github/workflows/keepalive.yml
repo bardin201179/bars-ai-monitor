@@ -1,0 +1,23 @@
+name: keepalive
+
+# GitHub отключает расписание в публичных репозиториях после 60 дней без коммитов.
+# Раз в месяц делаем пустой коммит, чтобы проверка продолжала работать.
+on:
+  schedule:
+    - cron: "0 3 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Пустой коммит
+        run: |
+          git config user.name "Bars AI monitor"
+          git config user.email "bardin-sa@mail.ru"
+          git commit --allow-empty -m "monitor: активность $(date -u '+%Y-%m-%d')"
+          git push
