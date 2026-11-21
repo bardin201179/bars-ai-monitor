@@ -21,9 +21,34 @@ jobs:
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 https://bardinsa.ru/ai-agent/api/health || echo 000)
           echo "Код ответа: $code"
           echo "code=$code" >> "$GITHUB_OUTPUT"
-          if [ "$code" = "200" ]; then
-            echo "Сайт отвечает"
-          else
-            echo "Сайт не отвечает"
-            exit 1
-          fi
+          if [ "$code" = "200" ]; then echo "Сайт отвечает"; else echo "Сайт не отвечает"; exit 1; fi
+
+      - name: Прошлый результат
+        id: prev
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prev=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/healthcheck.yml/runs?per_page=10" \
+            | jq -r --arg id "$GITHUB_RUN_ID" '[.workflow_runs[] | select((.id|tostring) != $id)][0].conclusion // "none"')
+          echo "prev=$prev"
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
+
+      - name: Сообщить о падении
+        if: failure() && steps.prev.outputs.prev != 'failure'
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT }}
+        run: |
+          text="🔴 Bars AI не отвечает%0AСайт: https://bardinsa.ru/ai-agent/%0AКод ответа: ${{ steps.check.outputs.code }}%0AВремя (UTC): $(date -u '+%Y-%m-%d %H:%M')%0AПроверка GitHub Actions, каждые 5 минут"
+          curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" -d "chat_id=$CHAT" -d "text=$text"
+
+      - name: Сообщить о восстановлении
+        if: success() && steps.prev.outputs.prev == 'failure'
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT }}
+        run: |
+          text="🟢 Bars AI снова отвечает%0AСайт: https://bardinsa.ru/ai-agent/%0AВремя (UTC): $(date -u '+%Y-%m-%d %H:%M')"
+          curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" -d "chat_id=$CHAT" -d "text=$text"
