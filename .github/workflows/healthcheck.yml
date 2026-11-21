@@ -1,0 +1,72 @@
+﻿name: Bars AI healthcheck
+
+# Внешняя проверка сайта: если bardinsa.ru/ai-agent не отвечает — сообщение в Telegram.
+# Запускается GitHub раз в 5 минут, дедупликация: пока сайт лежит, сообщение одно;
+# когда поднялся — придёт сообщение о восстановлении.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: bars-ai-healthcheck
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Проверить сайт
+        id: check
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 https://bardinsa.ru/ai-agent/api/health || echo 000)
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" = "200" ]; then
+            echo "Сайт отвечает"
+          else
+            echo "Код ответа: $code"
+            exit 1
+          fi
+
+      - name: Узнать результат прошлой проверки
+        id: prev
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          result=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/healthcheck.yml/runs?per_page=10" \
+            | jq -r --arg id "${{ github.run_id }}" '[.workflow_runs[] | select(.id != ($id|tonumber))][0].conclusion // "none"')
+          echo "prev=$result" >> "$GITHUB_OUTPUT"
+
+      - name: Сообщить о падении
+        if: failure() && steps.check.outcome == 'failure' && steps.prev.outputs.prev != 'failure'
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+            -d chat_id="$CHAT" \
+            --data-urlencode "text=🔴 Bars AI не отвечает
+Сайт: https://bardinsa.ru/ai-agent/
+Код ответа: ${{ steps.check.outputs.code }}
+Время (UTC): $(date -u '+%Y-%m-%d %H:%M')
+Проверка: GitHub Actions, каждые 5 минут."
+
+      - name: Сообщить о восстановлении
+        if: success() && steps.prev.outputs.prev == 'failure'
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+            -d chat_id="$CHAT" \
+            --data-urlencode "text=🟢 Bars AI снова отвечает
+Сайт: https://bardinsa.ru/ai-agent/
+Время (UTC): $(date -u '+%Y-%m-%d %H:%M')"
