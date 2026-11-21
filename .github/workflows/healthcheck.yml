@@ -41,8 +41,12 @@ jobs:
           TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT: ${{ secrets.TELEGRAM_CHAT }}
         run: |
-          text="🔴 Bars AI не отвечает%0AСайт: https://bardinsa.ru/ai-agent/%0AКод ответа: ${{ steps.check.outputs.code }}%0AВремя (UTC): $(date -u '+%Y-%m-%d %H:%M')%0AПроверка GitHub Actions, каждые 5 минут"
-          curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" -d "chat_id=$CHAT" -d "text=$text"
+          code="${{ steps.check.outputs.code }}"
+          text="🔴 Bars AI не отвечает%0AСайт: https://bardinsa.ru/ai-agent/%0AКод ответа: $code%0AВремя (UTC): $(date -u '+%Y-%m-%d %H:%M')%0AПроверка GitHub Actions, каждые 5 минут"
+          resp=$(curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" -d "chat_id=$CHAT" -d "text=$text")
+          echo "$resp" | head -c 400
+          echo
+          echo "$resp" | grep -q '"ok":true' || exit 1
 
       - name: Сообщить о восстановлении
         if: success() && steps.prev.outputs.prev == 'failure'
@@ -51,4 +55,7 @@ jobs:
           CHAT: ${{ secrets.TELEGRAM_CHAT }}
         run: |
           text="🟢 Bars AI снова отвечает%0AСайт: https://bardinsa.ru/ai-agent/%0AВремя (UTC): $(date -u '+%Y-%m-%d %H:%M')"
-          curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" -d "chat_id=$CHAT" -d "text=$text"
+          resp=$(curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" -d "chat_id=$CHAT" -d "text=$text")
+          echo "$resp" | head -c 400
+          echo
+          echo "$resp" | grep -q '"ok":true' || exit 1
